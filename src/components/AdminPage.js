@@ -3,34 +3,62 @@ import { AdminPanel } from './AdminPanel';
 import { Shield, ArrowLeft } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Toaster } from 'sonner';
+// Import the supabase client
+import { supabase } from './lib/supabaseClient';
 
 export function AdminPage({ onBack }) {
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [officeSSID, setOfficeSSID] = useState('Steerhub First Floor');
 
-  // Load attendance records and office SSID from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem('attendanceRecords');
-    if (saved) {
-      setAttendanceRecords(JSON.parse(saved));
-    }
+  // 1. Initial Data Fetch from Supabase
+  const fetchSupabaseLogs = async () => {
+    const { data, error } = await supabase
+      .from('attendance_logs')
+      .select('*')
+      .order('timestamp', { ascending: false });
 
+    if (error) {
+      console.error('Error fetching logs:', error);
+    } else {
+      // Map database columns to the format your AdminPanel expects
+      const formattedData = data.map(log => ({
+        id: log.id,
+        name: log.student_name,
+        timestamp: new Date(log.timestamp).getTime(),
+        type: log.status === 'Time In' ? 'time-in' : 'time-out',
+        studentId: log.student_id
+      }));
+      setAttendanceRecords(formattedData);
+    }
+  };
+
+  useEffect(() => {
+    // Initial fetch
+    fetchSupabaseLogs();
+
+    // Load office SSID
     const savedSSID = localStorage.getItem('officeSSID');
     if (savedSSID) {
       setOfficeSSID(savedSSID);
     }
-  }, []);
 
-  // Reload records every 3 seconds to show real-time updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const saved = localStorage.getItem('attendanceRecords');
-      if (saved) {
-        setAttendanceRecords(JSON.parse(saved));
-      }
-    }, 3000);
+    // 2. REAL-TIME SUBSCRIPTION
+    // This listens for any "INSERT" on the attendance_logs table
+    const channel = supabase
+      .channel('realtime_attendance')
+      .on('postgres_changes', 
+        { event: 'INSERT', schema: 'public', table: 'attendance_logs' }, 
+        (payload) => {
+          console.log('New log detected!', payload);
+          // Refresh the list when a new record is added
+          fetchSupabaseLogs();
+        }
+      )
+      .subscribe();
 
-    return () => clearInterval(interval);
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleUpdateSSID = (newSSID) => {
