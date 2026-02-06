@@ -27,6 +27,20 @@ export function StudentPage({ onBack }) {
     }
   }, []);
 
+  // === DEVICE / DAILY ATTENDANCE CHECK ===
+const getTodayDate = () => {
+  return new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+};
+
+const hasDeviceTimedInToday = () => {
+  return localStorage.getItem('device_attendance_date') === getTodayDate();
+};
+
+const markDeviceTimedInToday = () => {
+  localStorage.setItem('device_attendance_date', getTodayDate());
+};
+
+
   const handleNetworkDetected = (isConnected, network) => {
     setIsNetworkAuthorized(isConnected);
     setDetectedNetwork(network);
@@ -51,6 +65,17 @@ export function StudentPage({ onBack }) {
       return;
     }
 
+    // ❌ BLOCK if device already timed in today
+if (hasDeviceTimedInToday()) {
+  toast.error('THIS DEVICE HAS ALREADY RECORDED ATTENDANCE TODAY', {
+    duration: 5000,
+    className: 'bg-gray-900 text-white border border-red-500/50',
+  });
+  setShowScanner(false);
+  return;
+}
+
+
     try {
       const qrData = JSON.parse(decodedText);
       
@@ -58,6 +83,7 @@ export function StudentPage({ onBack }) {
       if (!qrData.sessionId || !qrData.type || qrData.type !== 'attendance_qr') {
         throw new Error('Invalid QR code format');
       }
+
 
       const newRecord = {
         id: `${Date.now()}-${Math.random()}`,
@@ -69,7 +95,8 @@ export function StudentPage({ onBack }) {
       const updatedRecords = [...attendanceRecords, newRecord];
       setAttendanceRecords(updatedRecords);
       localStorage.setItem('attendanceRecords', JSON.stringify(updatedRecords));
-      
+      markDeviceTimedInToday();
+
       toast.success('ATTENDANCE RECORDED - ' + (attendanceType === 'time-in' ? 'TIME IN' : 'TIME OUT') + ' | ' + studentName, { 
         duration: 4000,
         className: 'bg-gray-900 text-white border border-cyan-500/50',
