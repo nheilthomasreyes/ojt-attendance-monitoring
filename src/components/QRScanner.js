@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Scan, Upload, Camera, RefreshCcw } from 'lucide-react';
+import { Upload, Camera, RefreshCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export function QRScanner({ onScanSuccess }) {
@@ -10,7 +10,7 @@ export function QRScanner({ onScanSuccess }) {
   const regionId = "reader";
 
   // Logic to start the camera
-  const startCamera = async () => {
+  const startCamera = useCallback(async () => {
     setCameraError(false);
     const element = document.getElementById(regionId);
     if (!element) return;
@@ -42,7 +42,8 @@ export function QRScanner({ onScanSuccess }) {
       console.error("Camera Start Error:", err);
       setCameraError(true);
     }
-  };
+  }, [onScanSuccess]);
+
 
   // Logic to stop the camera completely
   const stopCamera = async () => {
@@ -65,17 +66,17 @@ export function QRScanner({ onScanSuccess }) {
   };
 
   useEffect(() => {
-    if (isCameraMode) {
-      // Give React 300ms to paint the #reader div before we hit the camera
-      const timer = setTimeout(() => startCamera(), 300);
-      return () => {
-        clearTimeout(timer);
-        stopCamera();
-      };
-    } else {
+  if (isCameraMode) {
+    const timer = setTimeout(() => startCamera(), 300);
+    return () => {
+      clearTimeout(timer);
       stopCamera();
-    }
-  }, [isCameraMode]);
+    };
+  } else {
+    stopCamera();
+  }
+}, [isCameraMode, startCamera]);
+
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
