@@ -38,53 +38,55 @@ export function AdminPanel({ records, officeSSID, onUpdateSSID }) {
   // This merges "Time In" and "Time Out" logs into a single entry per student per day
   // === NEW: GROUPING LOGIC ===
  // === FIXED: GROUPING LOGIC ===
-  const groupedRecords = useMemo(() => {
-    const groups = {};
+// === FIXED: GROUPING LOGIC sa loob ng AdminPanel ===
+const groupedRecords = useMemo(() => {
+  const groups = {};
 
-    records.forEach(r => {
-      const name = (r.student_name || r.studentName || r.name || 'Unknown').trim();
+  records.forEach(r => {
+    const name = (r.student_name || r.studentName || r.name || 'Unknown').trim();
+    const dateObj = new Date(r.timestamp || r.created_at);
+    const dateKey = dateObj.toLocaleDateString();
+    const key = `${name}-${dateKey}`;
+
+    if (!groups[key]) {
+      groups[key] = {
+        id: key,
+        student_name: name,
+        date: dateKey,
+        timeIn: null,
+        timeOut: null,
+        task: 'No task submitted', // Default
+        timestamp: r.timestamp || r.created_at 
+      };
+    }
+
+    const status = (r.status || '').toLowerCase().trim();
+
+    if (status === 'time in' || status === 'timein') {
+      groups[key].timeIn = dateObj.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+      // Huwag i-update ang task dito dahil "Ongoing..." ang default ng Time In
+    } 
+    else if (status === 'time out' || status === 'timeout') {
+      groups[key].timeOut = dateObj.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
       
-      // Siguraduhing tama ang pag-parse ng date mula sa 'timestamp' column ng Supabase
-      const dateObj = new Date(r.timestamp || r.created_at);
-      const dateKey = dateObj.toLocaleDateString();
-      const key = `${name}-${dateKey}`;
-
-      if (!groups[key]) {
-        groups[key] = {
-          id: key,
-          student_name: name,
-          date: dateKey,
-          timeIn: null,
-          timeOut: null,
-          task: 'No task submitted',
-          timestamp: r.timestamp || r.created_at 
-        };
+      // Kuhanin ang task accomplishment mula sa database column
+      // Chine-check kung may laman at hindi default string
+      if (r.task_accomplishment && 
+          r.task_accomplishment !== 'Ongoing...' && 
+          r.task_accomplishment.trim() !== '') {
+        groups[key].task = r.task_accomplishment;
       }
+    }
+  });
 
-      // Linisin ang status string para sa tamang paghahambing
-      const status = (r.status || '').toLowerCase().trim();
-
-      if (status === 'time in' || status === 'timein') {
-        groups[key].timeIn = dateObj.toLocaleTimeString([], { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        });
-      } else if (status === 'time out' || status === 'timeout') {
-        groups[key].timeOut = dateObj.toLocaleTimeString([], { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        });
-        
-        // Kuhanin ang task accomplishment
-        // Chine-check kung may laman at hindi "Ongoing..." (default ng Time In)
-        if (r.task_accomplishment && r.task_accomplishment !== 'EMPTY' && r.task_accomplishment !== 'Ongoing...') {
-          groups[key].task = r.task_accomplishment;
-        }
-      }
-    });
-
-    return Object.values(groups).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  }, [records]);
+  return Object.values(groups).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}, [records]);
   
   // 1. Get Unique Names
   const uniqueNames = useMemo(() => {

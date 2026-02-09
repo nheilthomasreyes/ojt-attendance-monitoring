@@ -66,18 +66,18 @@ export function AttendanceCard({ record, index }) {
           </div>
         </div>
 
-        {/* Task Section */}
-        {hasTimeOut && (
-          <div className="bg-black/30 rounded-lg p-3 border border-gray-800">
-            <div className="flex items-center gap-2 mb-1.5">
-              <ClipboardList className="size-3 text-purple-400" />
-              <span className="text-[10px] font-mono uppercase text-gray-500">Task Accomplishment</span>
-            </div>
-            <p className="text-xs text-gray-300 leading-relaxed italic">
-              "{record.task}"
-            </p>
-          </div>
-        )}
+       {/* Task Section */}
+{hasTimeOut && (
+  <div className="bg-black/30 rounded-lg p-3 border border-gray-800">
+    <div className="flex items-center gap-2 mb-1.5">
+      <span className="text-[10px] font-mono uppercase text-gray-500">Task Accomplishment</span>
+    </div>
+    <p className="text-xs text-gray-300 leading-relaxed italic">
+      {/* Kung 'Ongoing...' pa rin ang laman kahit may Time Out na, magpakita ng fallback */}
+      "{record.task === 'Ongoing...' ? 'No task details provided during time-out.' : record.task}"
+    </p>
+  </div>
+)}
 
         {/* Animated Scan Line */}
         <motion.div

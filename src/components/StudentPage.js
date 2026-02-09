@@ -51,11 +51,9 @@ export function StudentPage({ onBack }) {
   };
 
 const handleScanSuccess = async (decodedText) => {
-  // 1. IMMEDIATE GUARD
   if (isProcessing.current) return;
-  isProcessing.current = true; 
+  isProcessing.current = true;
 
-  // Basic validation
   if (!studentName.trim()) {
     toast.error('Please enter your name first');
     setShowScanner(false);
@@ -65,69 +63,57 @@ const handleScanSuccess = async (decodedText) => {
 
   try {
     const qrData = JSON.parse(decodedText);
-    if (!qrData.sessionId || qrData.type !== 'attendance_qr') {
-      throw new Error('Invalid QR code format');
-    }
-
-    // 2. PREVENT DUPLICATE TIME-IN FOR THE DAY
-    if (attendanceType === 'time-in' && hasDeviceTimedInToday()) {
-      throw new Error('This device has already timed in today');
-    }
-
-    // Close scanner IMMEDIATELY to prevent double-scan from the camera feed
-    setShowScanner(false);
-
-    // 3. DATABASE LOGIC
-    const { error: dbError } = await supabase
+    
+    // 1. DATABASE INSERT (Laging bagong row)
+    const { data, error: dbError } = await supabase
       .from('attendance_logs')
       .insert([
         { 
           student_name: studentName, 
           student_id: qrData.sessionId, 
           status: attendanceType === 'time-in' ? 'Time In' : 'Time Out',
+          // Kapag Time Out, kukunin ang value sa dailyTask state
           task_accomplishment: attendanceType === 'time-in' ? 'Ongoing...' : dailyTask,
           timestamp: new Date().toISOString()
         }
-      ]);
+      ])
+      .select(); // Pinapabalik ang data para ma-update ang UI agad
 
     if (dbError) throw dbError;
 
-    // 4. MARK SUCCESS
+    // 2. SUCCESS LOGIC
     if (attendanceType === 'time-in') {
       markDeviceTimedInToday();
     }
 
+    // I-update ang local UI gamit ang data galing sa DB
+    const dbRecord = data[0];
     const newRecord = {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // More unique ID
-      name: studentName,
-      timestamp: Date.now(),
-      type: attendanceType,
-      task: dailyTask 
+      id: dbRecord.id, // Gamitin ang ID galing sa database
+      name: dbRecord.student_name,
+      timestamp: dbRecord.timestamp,
+      type: dbRecord.status === 'Time In' ? 'time-in' : 'time-out',
+      task: dbRecord.task_accomplishment 
     };
 
-    // Update Local UI
-    setAttendanceRecords(prev => [...prev, newRecord]);
+    setAttendanceRecords(prev => [newRecord, ...prev].slice(0, 10));
     
-    // Notification (using a unique ID to prevent toast stacking)
     toast.success(`SUCCESS: ${attendanceType.toUpperCase()} recorded.`, {
-      id: `success-${attendanceType}` 
+      id: `success-${Date.now()}` 
     });
     
-    // Clear inputs after Time Out
+    setShowScanner(false);
+
     if (attendanceType === 'time-out') {
       setStudentName('');
       setDailyTask(''); 
     }
 
   } catch (error) {
-    toast.error(error.message, { id: 'scan-error' });
+    toast.error(error.message);
     setShowScanner(false);
   } finally {
-    // 5. EXTENDED LOCK: Wait 5 seconds before allowing the Ref to be true again
-    // This prevents accidental double scans from the camera buffer
-    setTimeout(() => {
-      isProcessing.current = false;
-    }, 5000);
+    setTimeout(() => { isProcessing.current = false; }, 3000);
   }
 };
 
