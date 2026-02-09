@@ -103,12 +103,13 @@ export function NetworkDetector({ officeSSID, onNetworkDetected }) {
         setDetectedNetwork(networkName);
         updateStatus(false, networkName);
       }
-    } catch (error) {
-      console.error('Network detection error:', error);
-      updateStatus(false, 'Detection Error');
-    }
-
-    finally {
+   } catch (error) {
+    console.error('Detection error:', error);
+    updateStatus(false, 'Error');
+  } finally {
+    // REPLACE/ADD THIS LINE:
+    // This ensures that whether the network is found OR not, 
+    // the "Scanning..." text is removed from the UI.
     setIsScanning(false); 
   }
   }, [officeSSID, updateStatus, getLocalIP]); // Correct dependencies
