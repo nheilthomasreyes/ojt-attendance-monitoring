@@ -45,10 +45,10 @@ export function StudentPage({ onBack }) {
     localStorage.setItem('device_attendance_date', getTodayDate());
   };
 
-  const handleNetworkDetected = (isConnected, network) => {
-    setIsNetworkAuthorized(isConnected);
-    setDetectedNetwork(network);
-  };
+  const handleNetworkDetected = useCallback((isConnected, network) => {
+  setIsNetworkAuthorized(isConnected);
+  setDetectedNetwork(network);
+}, []);
 
 const handleScanSuccess = async (decodedText) => {
   if (isProcessing.current) return;

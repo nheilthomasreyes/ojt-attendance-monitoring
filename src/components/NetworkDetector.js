@@ -108,7 +108,9 @@ export function NetworkDetector({ officeSSID, onNetworkDetected }) {
       updateStatus(false, 'Detection Error');
     }
 
-    setIsScanning(false);
+    finally {
+    setIsScanning(false); 
+  }
   }, [officeSSID, updateStatus, getLocalIP]); // Correct dependencies
 
   useEffect(() => {
