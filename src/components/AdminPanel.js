@@ -285,7 +285,7 @@ const groupedRecords = useMemo(() => {
             </button>
             <div className="max-w-2xl w-full text-center space-y-8 py-12 border-[14px] border-double border-black p-12 text-black">
               <h1 className="text-5xl font-black uppercase tracking-tighter">Attendance</h1>
-              <p className="text-xl font-bold text-gray-500 uppercase tracking-widest border-b-2 border-black pb-4">OJT Monitoring Station</p>
+              <p className="text-xl font-bold text-gray-500 uppercase tracking-widest border-b-2 border-black pb-4">OJT Monitoring System</p>
               {qrCodeUrl && <img src={qrCodeUrl} alt="QR" className="w-80 h-80 mx-auto border-4 border-black p-2" />}
               <div className="space-y-4">
                 <p className="text-2xl font-bold italic underline uppercase">Scan to Time-In / Time-Out</p>

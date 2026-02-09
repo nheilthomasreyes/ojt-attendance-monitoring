@@ -17,7 +17,7 @@ export function StudentPage({ onBack }) {
   const [attendanceType, setAttendanceType] = useState('time-in');
   const [officeSSID, setOfficeSSID] = useState('Steerhub First Floor');
   const [isNetworkAuthorized, setIsNetworkAuthorized] = useState(false);
-  const [setDetectedNetwork] = useState('');
+  const [detectedNetwork, setDetectedNetwork] = useState('');
 
   // Load attendance records and office SSID from localStorage
   useEffect(() => {
@@ -229,6 +229,13 @@ const startScanning = () => {
                   <h2 className="text-xl sm:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400 mb-2 font-mono">
                     {'>'}  RECORD ATTENDANCE
                   </h2>
+                  {/* This uses the 'detectedNetwork' variable, fixing the warning */}
+<div className="flex justify-center items-center gap-2 mt-2">
+  <div className={`h-2 w-2 rounded-full animate-pulse ${isNetworkAuthorized ? 'bg-green-500' : 'bg-red-500'}`} />
+  <span className="text-[10px] font-mono text-gray-500 uppercase tracking-widest">
+    Network: {detectedNetwork || "Searching..."}
+  </span>
+</div>
                 </div>
 
                 {!showScanner ? (
