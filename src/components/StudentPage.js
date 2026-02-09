@@ -95,20 +95,52 @@ export function StudentPage({ onBack }) {
         throw new Error('Invalid QR code format');
       }
 
-      // === INSERT TO SUPABASE DATABASE ===
-      const { error: dbError } = await supabase
-        .from('attendance_logs')
-        .insert([
-          { 
-            student_name: studentName, 
-            student_id: qrData.sessionId, 
-            status: attendanceType === 'time-in' ? 'Time In' : 'Time Out',
-            // Ensure your Supabase table has a column named 'task_accomplishment'
-            task_accomplishment: dailyTask 
-          }
-        ]);
+      const today = getTodayDate();
 
-      if (dbError) throw dbError;
+      if (attendanceType === 'time-in') {
+        // === INSERT NEW ROW FOR TIME IN ===
+        const { error: dbError } = await supabase
+          .from('attendance_logs')
+          .insert([
+            { 
+              student_name: studentName, 
+              student_id: qrData.sessionId, 
+              status: 'Time In',
+              task_accomplishment: 'Ongoing...' 
+            }
+          ]);
+
+        if (dbError) throw dbError;
+        markDeviceTimedInToday();
+
+      } else {
+        // === UPDATE EXISTING ROW FOR TIME OUT ===
+        // Look for the student's "Time In" record created today
+        const { data: existingRecords, error: fetchError } = await supabase
+          .from('attendance_logs')
+          .select('id')
+          .eq('student_name', studentName)
+          .eq('status', 'Time In')
+          .gte('created_at', `${today}T00:00:00Z`)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (fetchError) throw fetchError;
+
+        if (!existingRecords || existingRecords.length === 0) {
+          throw new Error('No "Time In" record found for today. Please Time In first.');
+        }
+
+        const { error: updateError } = await supabase
+          .from('attendance_logs')
+          .update({ 
+            status: 'Time Out',
+            task_accomplishment: dailyTask 
+          })
+          .eq('id', existingRecords[0].id);
+
+        if (updateError) throw updateError;
+      }
 
       // === UPDATE LOCAL UI ===
       const newRecord = {
@@ -116,17 +148,13 @@ export function StudentPage({ onBack }) {
         name: studentName,
         timestamp: Date.now(),
         type: attendanceType,
-        task: dailyTask // Store locally too
+        task: dailyTask 
       };
 
       const updatedRecords = [...attendanceRecords, newRecord];
       setAttendanceRecords(updatedRecords);
       localStorage.setItem('attendanceRecords', JSON.stringify(updatedRecords));
       
-      if (attendanceType === 'time-in') {
-        markDeviceTimedInToday();
-      }
-
       toast.success('ATTENDANCE RECORDED - ' + (attendanceType === 'time-in' ? 'TIME IN' : 'TIME OUT') + ' | ' + studentName, { 
         duration: 4000,
         className: 'bg-gray-900 text-white border border-cyan-500/50',
@@ -136,7 +164,7 @@ export function StudentPage({ onBack }) {
       setShowScanner(false);
       if (attendanceType === 'time-out') {
         setStudentName('');
-        setDailyTask(''); // Clear task after successful timeout
+        setDailyTask(''); 
       }
     } catch (error) {
       console.error('Submission Error:', error.message);
@@ -265,7 +293,7 @@ export function StudentPage({ onBack }) {
                     <UserCircle className="size-10 sm:size-12 text-white" />
                   </motion.div>
                   <h2 className="text-xl sm:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400 mb-2 font-mono">
-                    {'>'}  RECORD ATTENDANCE
+                    {'>'}  RECORD ATTENDANCE
                   </h2>
                 </div>
 
@@ -392,7 +420,7 @@ export function StudentPage({ onBack }) {
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl opacity-20 blur"></div>
                 <div className="relative bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl border border-gray-700 p-6">
                   <h3 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-400 mb-4 font-mono">
-                    {'>'}  RECENT ACTIVITY
+                    {'>'}  RECENT ACTIVITY
                   </h3>
                   <div className="space-y-2">
                     {attendanceRecords.slice(-3).reverse().map((record) => (
