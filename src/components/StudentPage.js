@@ -51,85 +51,85 @@ export function StudentPage({ onBack }) {
   };
 
 const handleScanSuccess = async (decodedText) => {
-    // 1. BLOCK MULTIPLE TRIGGERS
-    if (isProcessing.current) return;
-    isProcessing.current = true; 
+  // 1. IMMEDIATE GUARD
+  if (isProcessing.current) return;
+  isProcessing.current = true; 
 
-    if (!studentName.trim()) {
-      toast.error('Please enter your name first');
-      setShowScanner(false);
+  // Basic validation
+  if (!studentName.trim()) {
+    toast.error('Please enter your name first');
+    setShowScanner(false);
+    isProcessing.current = false;
+    return;
+  }
+
+  try {
+    const qrData = JSON.parse(decodedText);
+    if (!qrData.sessionId || qrData.type !== 'attendance_qr') {
+      throw new Error('Invalid QR code format');
+    }
+
+    // 2. PREVENT DUPLICATE TIME-IN FOR THE DAY
+    if (attendanceType === 'time-in' && hasDeviceTimedInToday()) {
+      throw new Error('This device has already timed in today');
+    }
+
+    // Close scanner IMMEDIATELY to prevent double-scan from the camera feed
+    setShowScanner(false);
+
+    // 3. DATABASE LOGIC
+    const { error: dbError } = await supabase
+      .from('attendance_logs')
+      .insert([
+        { 
+          student_name: studentName, 
+          student_id: qrData.sessionId, 
+          status: attendanceType === 'time-in' ? 'Time In' : 'Time Out',
+          task_accomplishment: attendanceType === 'time-in' ? 'Ongoing...' : dailyTask,
+          timestamp: new Date().toISOString()
+        }
+      ]);
+
+    if (dbError) throw dbError;
+
+    // 4. MARK SUCCESS
+    if (attendanceType === 'time-in') {
+      markDeviceTimedInToday();
+    }
+
+    const newRecord = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // More unique ID
+      name: studentName,
+      timestamp: Date.now(),
+      type: attendanceType,
+      task: dailyTask 
+    };
+
+    // Update Local UI
+    setAttendanceRecords(prev => [...prev, newRecord]);
+    
+    // Notification (using a unique ID to prevent toast stacking)
+    toast.success(`SUCCESS: ${attendanceType.toUpperCase()} recorded.`, {
+      id: `success-${attendanceType}` 
+    });
+    
+    // Clear inputs after Time Out
+    if (attendanceType === 'time-out') {
+      setStudentName('');
+      setDailyTask(''); 
+    }
+
+  } catch (error) {
+    toast.error(error.message, { id: 'scan-error' });
+    setShowScanner(false);
+  } finally {
+    // 5. EXTENDED LOCK: Wait 5 seconds before allowing the Ref to be true again
+    // This prevents accidental double scans from the camera buffer
+    setTimeout(() => {
       isProcessing.current = false;
-      return;
-    }
-
-    if (attendanceType === 'time-out' && !dailyTask.trim()) {
-      toast.error('REQUIRED: Please enter your daily task');
-      setShowScanner(false);
-      isProcessing.current = false;
-      return;
-    }
-
-    try {
-      const qrData = JSON.parse(decodedText);
-      if (!qrData.sessionId || qrData.type !== 'attendance_qr') {
-        throw new Error('Invalid QR code format');
-      }
-
-      // 2. PREVENT DUPLICATE TIME-IN FOR THE DAY
-      if (attendanceType === 'time-in' && hasDeviceTimedInToday()) {
-        throw new Error('This device has already timed in today');
-      }
-
-      // 3. DATABASE LOGIC: ALWAYS INSERT NEW ROW
-      // We use 'timestamp' instead of 'created_at' to match your Supabase screenshot
-      const { error: dbError } = await supabase
-        .from('attendance_logs')
-        .insert([
-          { 
-            student_name: studentName, 
-            student_id: qrData.sessionId, 
-            status: attendanceType === 'time-in' ? 'Time In' : 'Time Out',
-            // Ensure dailyTask is sent here
-            task_accomplishment: attendanceType === 'time-in' ? 'Ongoing...' : dailyTask,
-            timestamp: new Date().toISOString() // Manually setting if default fails
-          }
-        ]);
-
-      if (dbError) throw dbError;
-
-      // 4. MARK SUCCESS
-      if (attendanceType === 'time-in') {
-        markDeviceTimedInToday();
-      }
-
-      // Update Local UI
-      const newRecord = {
-        id: `${Date.now()}`,
-        name: studentName,
-        timestamp: Date.now(),
-        type: attendanceType,
-        task: dailyTask 
-      };
-      setAttendanceRecords(prev => [...prev, newRecord]);
-      
-      toast.success(`SUCCESS: ${attendanceType.toUpperCase()} recorded.`);
-      
-      setShowScanner(false);
-      if (attendanceType === 'time-out') {
-        setStudentName('');
-        setDailyTask(''); 
-      }
-
-    } catch (error) {
-      toast.error(error.message);
-      setShowScanner(false);
-    } finally {
-      // 5. LONG LOCK: Wait 3 seconds before allowing another scan
-      setTimeout(() => {
-        isProcessing.current = false;
-      }, 3000);
-    }
-  };
+    }, 5000);
+  }
+};
 
   const handleScanError = (error) => {
     console.error('Scan error:', error);
@@ -137,32 +137,21 @@ const handleScanSuccess = async (decodedText) => {
 
 const startScanning = () => {
     if (!studentName.trim()) {
-      toast.error('Please enter your name first', {
-        className: 'bg-gray-900 text-white border border-red-500/50',
-      });
+      toast.error('Please enter your name first');
       return;
     }
-
-    // Guard for Time Out scanning
     if (attendanceType === 'time-out' && !dailyTask.trim()) {
-      toast.error('Task accomplishment is required for Time Out', {
-        className: 'bg-gray-900 text-white border border-orange-500/50',
-      });
+      toast.error('Task accomplishment is required for Time Out');
       return;
     }
-    
     if (!isNetworkAuthorized) {
-      toast.error('NETWORK NOT AUTHORIZED - Please connect to office WiFi first', {
-        className: 'bg-gray-900 text-white border border-red-500/50',
-      });
+      toast.error('NETWORK NOT AUTHORIZED');
       return;
     }
-    
-    // ✅ ADD THIS LINE: Resets the lock before opening the camera
-    isProcessing.current = false; 
 
+    // REMOVED: isProcessing.current = false; (Let the handler manage the lock)
     setShowScanner(true);
-  };
+};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-black overflow-x-hidden">
