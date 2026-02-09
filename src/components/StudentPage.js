@@ -45,11 +45,10 @@ export function StudentPage({ onBack }) {
     localStorage.setItem('device_attendance_date', getTodayDate());
   };
 
-  // FIND THIS SECTION IN StudentPage.jsx
-const handleNetworkDetected = useCallback((isConnected, network) => {
-  setIsNetworkAuthorized(isConnected);
-  setDetectedNetwork(network);
-}, []); // Keep the empty dependency array
+  const handleNetworkDetected = (isConnected, network) => {
+    setIsNetworkAuthorized(isConnected);
+    setDetectedNetwork(network);
+  };
 
 const handleScanSuccess = async (decodedText) => {
   if (isProcessing.current) return;
@@ -230,13 +229,6 @@ const startScanning = () => {
                   <h2 className="text-xl sm:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400 mb-2 font-mono">
                     {'>'}  RECORD ATTENDANCE
                   </h2>
-                  {/* This uses the 'detectedNetwork' variable, fixing the warning */}
-<div className="flex justify-center items-center gap-2 mt-2">
-  <div className={`h-2 w-2 rounded-full animate-pulse ${isNetworkAuthorized ? 'bg-green-500' : 'bg-red-500'}`} />
-  <span className="text-[10px] font-mono text-gray-500 uppercase tracking-widest">
-    Network: {detectedNetwork || "Searching..."}
-  </span>
-</div>
                 </div>
 
                 {!showScanner ? (
