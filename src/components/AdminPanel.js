@@ -37,14 +37,16 @@ export function AdminPanel({ records, officeSSID, onUpdateSSID }) {
   // === NEW: GROUPING LOGIC ===
   // This merges "Time In" and "Time Out" logs into a single entry per student per day
   // === NEW: GROUPING LOGIC ===
+ // === FIXED: GROUPING LOGIC ===
   const groupedRecords = useMemo(() => {
     const groups = {};
 
     records.forEach(r => {
       const name = (r.student_name || r.studentName || r.name || 'Unknown').trim();
       
-      // Use toLocaleDateString to ensure we group by CALENDAR DAY, not exact time
-      const dateKey = new Date(r.timestamp || r.created_at).toLocaleDateString();
+      // Siguraduhing tama ang pag-parse ng date mula sa 'timestamp' column ng Supabase
+      const dateObj = new Date(r.timestamp || r.created_at);
+      const dateKey = dateObj.toLocaleDateString();
       const key = `${name}-${dateKey}`;
 
       if (!groups[key]) {
@@ -55,26 +57,27 @@ export function AdminPanel({ records, officeSSID, onUpdateSSID }) {
           timeIn: null,
           timeOut: null,
           task: 'No task submitted',
-          timestamp: r.timestamp || r.created_at // Used for final sorting
+          timestamp: r.timestamp || r.created_at 
         };
       }
 
-      // Standardize status check
-      const status = (r.status || '').toLowerCase().replace(/\s/g, '');
+      // Linisin ang status string para sa tamang paghahambing
+      const status = (r.status || '').toLowerCase().trim();
 
-      if (status === 'timein') {
-        groups[key].timeIn = new Date(r.timestamp || r.created_at).toLocaleTimeString([], { 
+      if (status === 'time in' || status === 'timein') {
+        groups[key].timeIn = dateObj.toLocaleTimeString([], { 
           hour: '2-digit', 
           minute: '2-digit' 
         });
-      } else if (status === 'timeout') {
-        groups[key].timeOut = new Date(r.timestamp || r.created_at).toLocaleTimeString([], { 
+      } else if (status === 'time out' || status === 'timeout') {
+        groups[key].timeOut = dateObj.toLocaleTimeString([], { 
           hour: '2-digit', 
           minute: '2-digit' 
         });
         
-        // Ensure we capture the task from the database column
-        if (r.task_accomplishment && r.task_accomplishment !== 'EMPTY') {
+        // Kuhanin ang task accomplishment
+        // Chine-check kung may laman at hindi "Ongoing..." (default ng Time In)
+        if (r.task_accomplishment && r.task_accomplishment !== 'EMPTY' && r.task_accomplishment !== 'Ongoing...') {
           groups[key].task = r.task_accomplishment;
         }
       }
@@ -82,7 +85,7 @@ export function AdminPanel({ records, officeSSID, onUpdateSSID }) {
 
     return Object.values(groups).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   }, [records]);
-
+  
   // 1. Get Unique Names
   const uniqueNames = useMemo(() => {
     const names = records.map(r => r.student_name || r.studentName || r.name).filter(Boolean);

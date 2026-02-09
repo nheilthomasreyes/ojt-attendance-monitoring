@@ -50,61 +50,38 @@ export function StudentPage({ onBack }) {
     setDetectedNetwork(network);
   };
 
-  const handleScanSuccess = async (decodedText) => {
-  // 1. CHECK LOCK: If already processing a scan, ignore this one
-  if (isProcessing.current) return; //
-  
-  // 2. SET LOCK: Immediately block any other scans from triggering
-  isProcessing.current = true; //
+const handleScanSuccess = async (decodedText) => {
+    // 1. BLOCK MULTIPLE TRIGGERS
+    if (isProcessing.current) return;
+    isProcessing.current = true; 
 
-  if (!studentName.trim()) {
-    toast.error('Please enter your name first');
-    setShowScanner(false);
-    isProcessing.current = false; // Release if validation fails
-    return;
-  }
+    if (!studentName.trim()) {
+      toast.error('Please enter your name first');
+      setShowScanner(false);
+      isProcessing.current = false;
+      return;
+    }
 
-    // NEW: Block Time Out if task field is empty
     if (attendanceType === 'time-out' && !dailyTask.trim()) {
-      toast.error('REQUIRED: Please enter your daily task accomplishment before timing out', {
-        className: 'bg-gray-900 text-white border border-orange-500/50',
-      });
+      toast.error('REQUIRED: Please enter your daily task');
       setShowScanner(false);
-      return;
-    }
-
-    // Check network authorization
-    if (!isNetworkAuthorized) {
-      toast.error('NETWORK ACCESS DENIED - Connected to: ' + detectedNetwork + ' - Required: ' + officeSSID, { 
-        duration: 5000,
-        className: 'bg-gray-900 text-white border border-red-500/50',
-      });
-      setShowScanner(false);
-      return;
-    }
-
-    // ❌ BLOCK if device already timed in today
-    if (attendanceType === 'time-in' && hasDeviceTimedInToday()) {
-      toast.error('THIS DEVICE HAS ALREADY TIMED IN TODAY', {
-        duration: 5000,
-        className: 'bg-gray-900 text-white border border-red-500/50',
-      });
-      setShowScanner(false);
+      isProcessing.current = false;
       return;
     }
 
     try {
-     const qrData = JSON.parse(decodedText);
-      
-      // Validate QR code structure
-      if (!qrData.sessionId || !qrData.type || qrData.type !== 'attendance_qr') {
+      const qrData = JSON.parse(decodedText);
+      if (!qrData.sessionId || qrData.type !== 'attendance_qr') {
         throw new Error('Invalid QR code format');
       }
 
-      const today = getTodayDate();
+      // 2. PREVENT DUPLICATE TIME-IN FOR THE DAY
+      if (attendanceType === 'time-in' && hasDeviceTimedInToday()) {
+        throw new Error('This device has already timed in today');
+      }
 
-      if (attendanceType === 'time-in') {
-        // === DATABASE LOGIC: ALWAYS INSERT A NEW ROW ===
+      // 3. DATABASE LOGIC: ALWAYS INSERT NEW ROW
+      // We use 'timestamp' instead of 'created_at' to match your Supabase screenshot
       const { error: dbError } = await supabase
         .from('attendance_logs')
         .insert([
@@ -112,83 +89,45 @@ export function StudentPage({ onBack }) {
             student_name: studentName, 
             student_id: qrData.sessionId, 
             status: attendanceType === 'time-in' ? 'Time In' : 'Time Out',
-            task_accomplishment: attendanceType === 'time-in' ? 'Ongoing...' : dailyTask 
+            // Ensure dailyTask is sent here
+            task_accomplishment: attendanceType === 'time-in' ? 'Ongoing...' : dailyTask,
+            timestamp: new Date().toISOString() // Manually setting if default fails
           }
         ]);
 
       if (dbError) throw dbError;
 
-      // Only mark the "Already Timed In" lock if the current scan is Time In
+      // 4. MARK SUCCESS
       if (attendanceType === 'time-in') {
         markDeviceTimedInToday();
       }
 
-      } else {
-        // === UPDATE EXISTING ROW FOR TIME OUT ===
-        // Look for the student's "Time In" record created today
-        const { data: existingRecords, error: fetchError } = await supabase
-          .from('attendance_logs')
-          .select('id')
-          .eq('student_name', studentName)
-          .eq('status', 'Time In')
-          .gte('created_at', `${today}T00:00:00Z`)
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        if (fetchError) throw fetchError;
-
-        if (!existingRecords || existingRecords.length === 0) {
-          throw new Error('No "Time In" record found for today. Please Time In first.');
-        }
-
-        const { error: updateError } = await supabase
-          .from('attendance_logs')
-          .update({ 
-            status: 'Time Out',
-            task_accomplishment: dailyTask 
-          })
-          .eq('id', existingRecords[0].id);
-
-        if (updateError) throw updateError;
-      }
-
-      // === UPDATE LOCAL UI ===
-      // === UPDATE LOCAL UI ===
+      // Update Local UI
       const newRecord = {
-        id: `${Date.now()}-${Math.random()}`,
+        id: `${Date.now()}`,
         name: studentName,
         timestamp: Date.now(),
         type: attendanceType,
         task: dailyTask 
       };
-
-      const updatedRecords = [...attendanceRecords, newRecord];
-      setAttendanceRecords(updatedRecords);
-      localStorage.setItem('attendanceRecords', JSON.stringify(updatedRecords));
+      setAttendanceRecords(prev => [...prev, newRecord]);
       
-      toast.success('ATTENDANCE RECORDED - ' + (attendanceType === 'time-in' ? 'TIME IN' : 'TIME OUT') + ' | ' + studentName, { 
-        duration: 4000,
-        className: 'bg-gray-900 text-white border border-cyan-500/50',
-      });
+      toast.success(`SUCCESS: ${attendanceType.toUpperCase()} recorded.`);
       
-      // Reset logic
       setShowScanner(false);
       if (attendanceType === 'time-out') {
         setStudentName('');
         setDailyTask(''); 
       }
+
     } catch (error) {
-      console.error('Submission Error:', error.message);
-      toast.error('ERROR: ' + error.message, {
-        className: 'bg-gray-900 text-white border border-red-500/50',
-      });
+      toast.error(error.message);
       setShowScanner(false);
     } finally {
-      // ✅ ADD THIS: Releases the lock after 1.5 seconds 
-      // This prevents the "multiple notification" glitch
+      // 5. LONG LOCK: Wait 3 seconds before allowing another scan
       setTimeout(() => {
         isProcessing.current = false;
-      }, 1500);
+      }, 3000);
     }
   };
 
