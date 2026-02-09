@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { QRScanner } from './QRScanner';
 import { NetworkDetector } from './NetworkDetector';
 import { WifiOff, UserCircle, LogIn, LogOut, Zap, ArrowLeft, ClipboardList } from 'lucide-react';
@@ -8,6 +8,7 @@ import { toast, Toaster } from 'sonner';
 import { supabase } from '../lib/supabaseClient'; 
 
 export function StudentPage({ onBack }) {
+  const isProcessing = useRef(false);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [showScanner, setShowScanner] = useState(false);
   const [studentName, setStudentName] = useState('');
@@ -50,13 +51,18 @@ export function StudentPage({ onBack }) {
   };
 
   const handleScanSuccess = async (decodedText) => {
-    if (!studentName.trim()) {
-      toast.error('Please enter your name first', {
-        className: 'bg-gray-900 text-white border border-red-500/50',
-      });
-      setShowScanner(false);
-      return;
-    }
+  // 1. CHECK LOCK: If already processing a scan, ignore this one
+  if (isProcessing.current) return; //
+  
+  // 2. SET LOCK: Immediately block any other scans from triggering
+  isProcessing.current = true; //
+
+  if (!studentName.trim()) {
+    toast.error('Please enter your name first');
+    setShowScanner(false);
+    isProcessing.current = false; // Release if validation fails
+    return;
+  }
 
     // NEW: Block Time Out if task field is empty
     if (attendanceType === 'time-out' && !dailyTask.trim()) {
@@ -88,7 +94,7 @@ export function StudentPage({ onBack }) {
     }
 
     try {
-      const qrData = JSON.parse(decodedText);
+     const qrData = JSON.parse(decodedText);
       
       // Validate QR code structure
       if (!qrData.sessionId || !qrData.type || qrData.type !== 'attendance_qr') {
@@ -143,6 +149,7 @@ export function StudentPage({ onBack }) {
       }
 
       // === UPDATE LOCAL UI ===
+      // === UPDATE LOCAL UI ===
       const newRecord = {
         id: `${Date.now()}-${Math.random()}`,
         name: studentName,
@@ -172,6 +179,12 @@ export function StudentPage({ onBack }) {
         className: 'bg-gray-900 text-white border border-red-500/50',
       });
       setShowScanner(false);
+    } finally {
+      // ✅ ADD THIS: Releases the lock after 1.5 seconds 
+      // This prevents the "multiple notification" glitch
+      setTimeout(() => {
+        isProcessing.current = false;
+      }, 1500);
     }
   };
 
@@ -179,7 +192,7 @@ export function StudentPage({ onBack }) {
     console.error('Scan error:', error);
   };
 
-  const startScanning = () => {
+const startScanning = () => {
     if (!studentName.trim()) {
       toast.error('Please enter your name first', {
         className: 'bg-gray-900 text-white border border-red-500/50',
@@ -202,6 +215,9 @@ export function StudentPage({ onBack }) {
       return;
     }
     
+    // ✅ ADD THIS LINE: Resets the lock before opening the camera
+    isProcessing.current = false; 
+
     setShowScanner(true);
   };
 

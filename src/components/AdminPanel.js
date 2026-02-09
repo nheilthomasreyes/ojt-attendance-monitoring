@@ -36,11 +36,14 @@ export function AdminPanel({ records, officeSSID, onUpdateSSID }) {
 
   // === NEW: GROUPING LOGIC ===
   // This merges "Time In" and "Time Out" logs into a single entry per student per day
+  // === NEW: GROUPING LOGIC ===
   const groupedRecords = useMemo(() => {
     const groups = {};
 
     records.forEach(r => {
       const name = (r.student_name || r.studentName || r.name || 'Unknown').trim();
+      
+      // Use toLocaleDateString to ensure we group by CALENDAR DAY, not exact time
       const dateKey = new Date(r.timestamp || r.created_at).toLocaleDateString();
       const key = `${name}-${dateKey}`;
 
@@ -52,18 +55,28 @@ export function AdminPanel({ records, officeSSID, onUpdateSSID }) {
           timeIn: null,
           timeOut: null,
           task: 'No task submitted',
-          timestamp: r.timestamp || r.created_at // for sorting
+          timestamp: r.timestamp || r.created_at // Used for final sorting
         };
       }
 
-      const status = (r.status || '').toLowerCase();
-      const type = (r.type || '').toLowerCase();
+      // Standardize status check
+      const status = (r.status || '').toLowerCase().replace(/\s/g, '');
 
-      if (status === 'time in' || type === 'time-in') {
-        groups[key].timeIn = new Date(r.timestamp || r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      } else if (status === 'time out' || type === 'time-out') {
-        groups[key].timeOut = new Date(r.timestamp || r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        if (r.task_accomplishment) groups[key].task = r.task_accomplishment;
+      if (status === 'timein') {
+        groups[key].timeIn = new Date(r.timestamp || r.created_at).toLocaleTimeString([], { 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        });
+      } else if (status === 'timeout') {
+        groups[key].timeOut = new Date(r.timestamp || r.created_at).toLocaleTimeString([], { 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        });
+        
+        // Ensure we capture the task from the database column
+        if (r.task_accomplishment && r.task_accomplishment !== 'EMPTY') {
+          groups[key].task = r.task_accomplishment;
+        }
       }
     });
 
