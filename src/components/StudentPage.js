@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { QRScanner } from './QRScanner';
 import { NetworkDetector } from './NetworkDetector';
 import { WifiOff, UserCircle, LogIn, LogOut, Zap, ArrowLeft, ClipboardList } from 'lucide-react';
@@ -8,7 +8,6 @@ import { toast, Toaster } from 'sonner';
 import { supabase } from '../lib/supabaseClient'; 
 
 export function StudentPage({ onBack }) {
-  const isProcessing = useRef(false);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [showScanner, setShowScanner] = useState(false);
   const [studentName, setStudentName] = useState('');
@@ -50,94 +49,133 @@ export function StudentPage({ onBack }) {
     setDetectedNetwork(network);
   };
 
-const handleScanSuccess = async (decodedText) => {
-  if (isProcessing.current) return;
-  isProcessing.current = true;
-
-  if (!studentName.trim()) {
-    toast.error('Please enter your name first');
-    setShowScanner(false);
-    isProcessing.current = false;
-    return;
-  }
-
-  try {
-    const qrData = JSON.parse(decodedText);
-    
-    // 1. DATABASE INSERT (Laging bagong row)
-    const { data, error: dbError } = await supabase
-      .from('attendance_logs')
-      .insert([
-        { 
-          student_name: studentName, 
-          student_id: qrData.sessionId, 
-          status: attendanceType === 'time-in' ? 'Time In' : 'Time Out',
-          // Kapag Time Out, kukunin ang value sa dailyTask state
-          task_accomplishment: attendanceType === 'time-in' ? 'Ongoing...' : dailyTask,
-          timestamp: new Date().toISOString()
-        }
-      ])
-      .select(); // Pinapabalik ang data para ma-update ang UI agad
-
-    if (dbError) throw dbError;
-
-    // 2. SUCCESS LOGIC
-    if (attendanceType === 'time-in') {
-      markDeviceTimedInToday();
+  const handleScanSuccess = async (decodedText) => {
+    if (!studentName.trim()) {
+      toast.error('Please enter your name first', {
+        className: 'bg-gray-900 text-white border border-red-500/50',
+      });
+      setShowScanner(false);
+      return;
     }
 
-    // I-update ang local UI gamit ang data galing sa DB
-    const dbRecord = data[0];
-    const newRecord = {
-      id: dbRecord.id, // Gamitin ang ID galing sa database
-      name: dbRecord.student_name,
-      timestamp: dbRecord.timestamp,
-      type: dbRecord.status === 'Time In' ? 'time-in' : 'time-out',
-      task: dbRecord.task_accomplishment 
-    };
-
-    setAttendanceRecords(prev => [newRecord, ...prev].slice(0, 10));
-    
-    toast.success(`SUCCESS: ${attendanceType.toUpperCase()} recorded.`, {
-      id: `success-${Date.now()}` 
-    });
-    
-    setShowScanner(false);
-
-    if (attendanceType === 'time-out') {
-      setStudentName('');
-      setDailyTask(''); 
+    // NEW: Block Time Out if task field is empty
+    if (attendanceType === 'time-out' && !dailyTask.trim()) {
+      toast.error('REQUIRED: Please enter your daily task accomplishment before timing out', {
+        className: 'bg-gray-900 text-white border border-orange-500/50',
+      });
+      setShowScanner(false);
+      return;
     }
 
-  } catch (error) {
-    toast.error(error.message);
-    setShowScanner(false);
-  } finally {
-    setTimeout(() => { isProcessing.current = false; }, 3000);
-  }
-};
+    // Check network authorization
+    if (!isNetworkAuthorized) {
+      toast.error('NETWORK ACCESS DENIED - Connected to: ' + detectedNetwork + ' - Required: ' + officeSSID, { 
+        duration: 5000,
+        className: 'bg-gray-900 text-white border border-red-500/50',
+      });
+      setShowScanner(false);
+      return;
+    }
+
+    // ❌ BLOCK if device already timed in today
+    if (attendanceType === 'time-in' && hasDeviceTimedInToday()) {
+      toast.error('THIS DEVICE HAS ALREADY TIMED IN TODAY', {
+        duration: 5000,
+        className: 'bg-gray-900 text-white border border-red-500/50',
+      });
+      setShowScanner(false);
+      return;
+    }
+
+    try {
+      const qrData = JSON.parse(decodedText);
+      
+      // Validate QR code structure
+      if (!qrData.sessionId || !qrData.type || qrData.type !== 'attendance_qr') {
+        throw new Error('Invalid QR code format');
+      }
+
+      // === INSERT TO SUPABASE DATABASE ===
+      const { error: dbError } = await supabase
+        .from('attendance_logs')
+        .insert([
+          { 
+            student_name: studentName, 
+            student_id: qrData.sessionId, 
+            status: attendanceType === 'time-in' ? 'Time In' : 'Time Out',
+            // Ensure your Supabase table has a column named 'task_accomplishment'
+            task_accomplishment: dailyTask 
+          }
+        ]);
+
+      if (dbError) throw dbError;
+
+      // === UPDATE LOCAL UI ===
+      const newRecord = {
+        id: `${Date.now()}-${Math.random()}`,
+        name: studentName,
+        timestamp: Date.now(),
+        type: attendanceType,
+        task: dailyTask // Store locally too
+      };
+
+      const updatedRecords = [...attendanceRecords, newRecord];
+      setAttendanceRecords(updatedRecords);
+      localStorage.setItem('attendanceRecords', JSON.stringify(updatedRecords));
+      
+      if (attendanceType === 'time-in') {
+        markDeviceTimedInToday();
+      }
+
+      toast.success('ATTENDANCE RECORDED - ' + (attendanceType === 'time-in' ? 'TIME IN' : 'TIME OUT') + ' | ' + studentName, { 
+        duration: 4000,
+        className: 'bg-gray-900 text-white border border-cyan-500/50',
+      });
+      
+      // Reset logic
+      setShowScanner(false);
+      if (attendanceType === 'time-out') {
+        setStudentName('');
+        setDailyTask(''); // Clear task after successful timeout
+      }
+    } catch (error) {
+      console.error('Submission Error:', error.message);
+      toast.error('ERROR: ' + error.message, {
+        className: 'bg-gray-900 text-white border border-red-500/50',
+      });
+      setShowScanner(false);
+    }
+  };
 
   const handleScanError = (error) => {
     console.error('Scan error:', error);
   };
 
-const startScanning = () => {
+  const startScanning = () => {
     if (!studentName.trim()) {
-      toast.error('Please enter your name first');
-      return;
-    }
-    if (attendanceType === 'time-out' && !dailyTask.trim()) {
-      toast.error('Task accomplishment is required for Time Out');
-      return;
-    }
-    if (!isNetworkAuthorized) {
-      toast.error('NETWORK NOT AUTHORIZED');
+      toast.error('Please enter your name first', {
+        className: 'bg-gray-900 text-white border border-red-500/50',
+      });
       return;
     }
 
-    // REMOVED: isProcessing.current = false; (Let the handler manage the lock)
+    // Guard for Time Out scanning
+    if (attendanceType === 'time-out' && !dailyTask.trim()) {
+      toast.error('Task accomplishment is required for Time Out', {
+        className: 'bg-gray-900 text-white border border-orange-500/50',
+      });
+      return;
+    }
+    
+    if (!isNetworkAuthorized) {
+      toast.error('NETWORK NOT AUTHORIZED - Please connect to office WiFi first', {
+        className: 'bg-gray-900 text-white border border-red-500/50',
+      });
+      return;
+    }
+    
     setShowScanner(true);
-};
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-black overflow-x-hidden">
@@ -227,7 +265,7 @@ const startScanning = () => {
                     <UserCircle className="size-10 sm:size-12 text-white" />
                   </motion.div>
                   <h2 className="text-xl sm:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400 mb-2 font-mono">
-                    {'>'}  RECORD ATTENDANCE
+                    {'>'}  RECORD ATTENDANCE
                   </h2>
                 </div>
 
@@ -354,7 +392,7 @@ const startScanning = () => {
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl opacity-20 blur"></div>
                 <div className="relative bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl border border-gray-700 p-6">
                   <h3 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-400 mb-4 font-mono">
-                    {'>'}  RECENT ACTIVITY
+                    {'>'}  RECENT ACTIVITY
                   </h3>
                   <div className="space-y-2">
                     {attendanceRecords.slice(-3).reverse().map((record) => (
