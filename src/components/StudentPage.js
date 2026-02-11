@@ -121,12 +121,13 @@ const handleScanSuccess = async (decodedText) => {
     console.error('Scan error:', error);
   };
 
+// Fix the startScanning validation (around line 135):
 const startScanning = () => {
     if (!studentName.trim()) {
       toast.error('Please enter your name first');
       return;
     }
-    if (attendanceType === 'time-out' && !dailyTask.trim()) {
+    if (attendanceType === 'time-out' && hasDeviceTimedInToday() && !dailyTask.trim()) {
       toast.error('Task accomplishment is required for Time Out');
       return;
     }
@@ -249,21 +250,33 @@ const startScanning = () => {
 
                     {/* NEW: Task Accomplishment Field */}
                     <div>
+                      // Fix the label hint (around line 272):
                       <label className="flex justify-between items-center text-xs sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-2">
                         <span>Daily Task Accomplishment</span>
-                        {!hasDeviceTimedInToday() && (
+                        {attendanceType === 'time-in' ? (
+                          <span className="text-[10px] text-cyan-500 lowercase opacity-70">For Time Out only</span>
+                        ) : !hasDeviceTimedInToday() ? (
                           <span className="text-[10px] text-orange-500 lowercase opacity-70">Enables after Time In</span>
+                        ) : (
+                          <span className="text-[10px] text-green-500 lowercase opacity-70">Required</span>
                         )}
                       </label>
                       <div className="relative">
+                        // Fix the text area disabled logic :
                         <textarea
                           value={dailyTask}
                           onChange={(e) => setDailyTask(e.target.value)}
-                          disabled={!hasDeviceTimedInToday()}
-                          placeholder={hasDeviceTimedInToday() ? "What did you work on today?" : "Field locked until Time In recorded."}
+                          disabled={!hasDeviceTimedInToday() || attendanceType === 'time-in'}
+                          placeholder={
+                            !hasDeviceTimedInToday() 
+                              ? "Field locked until Time In recorded." 
+                              : attendanceType === 'time-in'
+                              ? "Task accomplishment is for Time Out only"
+                              : "What did you work on today?"
+                          }
                           rows={3}
                           className={`w-full px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base bg-gray-950 border rounded-lg outline-none text-white font-mono transition-all duration-300 ${
-                            hasDeviceTimedInToday() 
+                            hasDeviceTimedInToday() && attendanceType === 'time-out'
                             ? 'border-gray-700 focus:ring-2 focus:ring-purple-500 border-purple-500/30' 
                             : 'border-gray-800 opacity-40 cursor-not-allowed'
                           }`}
