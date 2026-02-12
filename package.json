@@ -24,7 +24,8 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "serve-lan": "http-server build -p 3000 -a 192.168.0.109 -S -C 192.168.0.109.pem -K 192.168.0.109-key.pem"
   },
   "eslintConfig": {
     "extends": [
@@ -47,4 +48,7 @@
   "devDependencies": {
     "tailwindcss": "^3.4.19"
   }
+
+  
 }
+
