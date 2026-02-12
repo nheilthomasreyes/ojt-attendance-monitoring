@@ -197,84 +197,117 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { Wifi, WifiOff, Signal, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 
-export function NetworkDetector({ officeSSID, allowedLocalIPPrefix = "192.168.0." }) {
+export function NetworkDetector({
+  allowedIPPrefix = "192.168.0."
+}) {
   const [isConnected, setIsConnected] = useState(false);
-  const [detectedNetwork, setDetectedNetwork] = useState("");
+  const [detectedNetwork, setDetectedNetwork] = useState("Checking...");
   const [isScanning, setIsScanning] = useState(true);
 
-  const lastStatus = useRef(false);
+  const lastStatus = useRef(null);
+  const scanTimeout = useRef(null);
 
-  const updateStatus = useCallback((status, networkName) => {
+  const updateStatus = useCallback((status, label) => {
     if (lastStatus.current !== status) {
       lastStatus.current = status;
       setIsConnected(status);
-      setDetectedNetwork(networkName);
+      setDetectedNetwork(label);
     }
   }, []);
 
   const getLocalIP = useCallback(() => {
     return new Promise((resolve) => {
-      const pc = new RTCPeerConnection({ iceServers: [] });
+      const RTCPeer =
+        window.RTCPeerConnection ||
+        window.webkitRTCPeerConnection ||
+        window.mozRTCPeerConnection;
+
+      if (!RTCPeer) {
+        resolve(null);
+        return;
+      }
+
+      const pc = new RTCPeer({ iceServers: [] });
       pc.createDataChannel("");
-      pc.createOffer().then((offer) => pc.setLocalDescription(offer));
-      pc.onicecandidate = (ice) => {
-        if (!ice?.candidate?.candidate) return;
-        const match = ice.candidate.candidate.match(
+
+      pc.createOffer()
+        .then((offer) => pc.setLocalDescription(offer))
+        .catch(() => resolve(null));
+
+      pc.onicecandidate = (event) => {
+        if (!event?.candidate?.candidate) return;
+
+        const ipMatch = event.candidate.candidate.match(
           /([0-9]{1,3}(\.[0-9]{1,3}){3})/
         );
-        if (match?.[1]) {
+
+        if (ipMatch?.[1]) {
+          clearTimeout(scanTimeout.current);
+          pc.onicecandidate = null;
           pc.close();
-          resolve(match[1]);
+          resolve(ipMatch[1]);
         }
       };
-      setTimeout(() => {
+
+      scanTimeout.current = setTimeout(() => {
+        pc.onicecandidate = null;
         pc.close();
         resolve(null);
-      }, 4000);
+      }, 3000);
     });
   }, []);
 
   const detectNetwork = useCallback(async () => {
     setIsScanning(true);
 
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(
+      navigator.userAgent
+    );
+
     try {
       const localIP = await getLocalIP();
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      const isPrivateIP =
-  localIP &&
-  (
-    localIP.startsWith("192.168.") ||
-    localIP.startsWith("10.") ||
-    localIP.startsWith("172.")
-  );
 
-      const isAuthorized = isMobile && isPrivateIP;
+      const isAuthorized =
+        isMobile &&
+        typeof localIP === "string" &&
+        localIP.startsWith(allowedIPPrefix);
 
       if (isAuthorized) {
-        updateStatus(true, officeSSID);
+        updateStatus(true, `Local Wi-Fi (${localIP})`);
       } else {
-        const networkName = isMobile ? localIP || "Unknown Network" : "Laptop/Unsupported";
-        updateStatus(false, networkName);
+        updateStatus(
+          false,
+          !isMobile
+            ? "Desktop / Laptop not allowed"
+            : localIP
+            ? "Wrong Wi-Fi network"
+            : "Mobile data or unknown network"
+        );
       }
-    } catch (err) {
-      updateStatus(false, "Error");
+    } catch {
+      updateStatus(false, "Network detection failed");
     }
 
     setIsScanning(false);
-  }, [officeSSID, allowedLocalIPPrefix, getLocalIP, updateStatus]);
+  }, [allowedIPPrefix, getLocalIP, updateStatus]);
 
   useEffect(() => {
     detectNetwork();
     const interval = setInterval(detectNetwork, 8000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(scanTimeout.current);
+    };
   }, [detectNetwork]);
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className={`rounded-xl border-2 p-4 ${
-        isConnected ? "border-cyan-500 bg-cyan-500/10" : "border-red-500 bg-red-500/10"
+      className={`rounded-xl border-2 p-4 transition ${
+        isConnected
+          ? "border-cyan-500 bg-cyan-500/10"
+          : "border-red-500 bg-red-500/10"
       }`}
     >
       <div className="flex items-center gap-3 mb-3">
@@ -288,8 +321,16 @@ export function NetworkDetector({ officeSSID, allowedLocalIPPrefix = "192.168.0.
 
         <div>
           <div className="text-xs text-gray-400">Network Status</div>
-          <div className={`font-semibold ${isConnected ? "text-cyan-400" : "text-red-400"}`}>
-            {isScanning ? "Scanning..." : isConnected ? "Connected" : "Not Authorized"}
+          <div
+            className={`font-semibold ${
+              isConnected ? "text-cyan-400" : "text-red-400"
+            }`}
+          >
+            {isScanning
+              ? "Scanning..."
+              : isConnected
+              ? "Authorized"
+              : "Not Authorized"}
           </div>
         </div>
 
@@ -301,11 +342,12 @@ export function NetworkDetector({ officeSSID, allowedLocalIPPrefix = "192.168.0.
         )}
       </div>
 
-      <div className="text-xs text-gray-300">Required Network: {officeSSID}</div>
+      <div className="text-xs text-gray-300">
+        Allowed Network: {allowedIPPrefix}*
+      </div>
       <div className="text-xs text-gray-400 mt-1">
-        Detected Network: {detectedNetwork || "Checking..."}
+        Detected: {detectedNetwork}
       </div>
     </motion.div>
   );
 }
-
