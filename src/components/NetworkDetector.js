@@ -223,10 +223,10 @@ export function NetworkDetector({ officeSSID, onNetworkDetected }) {
       const data = await res.json();
 
       if (data.authorized) {
-        setDetectedNetwork(`${officeSSID}`);
+        setDetectedNetwork(officeSSID);
         updateStatus(true, officeSSID);
       } else {
-        setDetectedNetwork(`Public IP: ${data.ip}`);
+        setDetectedNetwork(data.ip);
         updateStatus(false, data.ip);
       }
     } catch (err) {
@@ -292,6 +292,11 @@ export function NetworkDetector({ officeSSID, onNetworkDetected }) {
       <div className="text-xs text-gray-300">
         Required Network: {officeSSID}
       </div>
+
+      <div className="text-xs text-gray-400 mt-1">
+        Detected Network: {detectedNetwork || "Checking..."}
+      </div>
     </motion.div>
   );
 }
+
